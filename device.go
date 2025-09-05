@@ -177,6 +177,46 @@ func (d Device) RunShellCommandWithBytes(cmd string, args ...string) ([]byte, er
 	return raw, err
 }
 
+// RunShellCommandAsync starts a long-running shell command on the device and returns
+// a Shell handle that can be used to stream output and forcefully stop the command
+// via Shell.Close(). The returned Shell.Reader streams combined stdout/stderr.
+func (d Device) RunShellCommandAsync(cmd string, args ...string) (*Shell, error) {
+	if len(args) > 0 {
+		cmd = fmt.Sprintf("%s %s", cmd, strings.Join(args, " "))
+	}
+	if strings.TrimSpace(cmd) == "" {
+		return nil, errors.New("adb shell: command cannot be empty")
+	}
+
+	// Establish device transport
+	tp, err := d.createDeviceTransport()
+	if err != nil {
+		return nil, err
+	}
+	// We intentionally do NOT defer tp.Close() here because we return a live Shell.
+
+	// Use shell v2 protocol by sending the "shell:<cmd>" service and then wrapping
+	// the underlying connection with shellTransport to read multiplexed streams.
+	if err = tp.Send(fmt.Sprintf("shell:%s", cmd)); err != nil {
+		_ = tp.Close()
+		return nil, err
+	}
+	if err = tp.VerifyResponse(); err != nil {
+		_ = tp.Close()
+		return nil, err
+	}
+
+	shTp, err := tp.CreateShellTransport()
+	if err != nil {
+		_ = tp.Close()
+		return nil, err
+	}
+
+	shell := &Shell{st: shTp}
+	shell.Reader = newShellReader(&shell.st)
+	return shell, nil
+}
+
 func (d Device) EnableAdbOverTCP(port ...int) (err error) {
 	if len(port) == 0 {
 		port = []int{AdbDaemonPort}

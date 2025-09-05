@@ -12,6 +12,7 @@ package main
 
 import (
 	"github.com/Tryanks/gadb"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -50,8 +51,14 @@ func main() {
 		log.Fatalln("fail to install: ", shellOutput)
 	}
 
-	log.Println("install completed")
+ log.Println("install completed")
 
+	// Example: Run a long-running shell command asynchronously and stop it
+	sh, err := dev.RunShellCommandAsync("logcat")
+	checkErr(err, "start shell")
+	go io.Copy(os.Stdout, sh.Reader)
+	// ... do something ... then stop like Ctrl+C
+	_ = sh.Close()
 }
 
 func checkErr(err error, msg ...string) {
