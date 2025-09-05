@@ -135,12 +135,12 @@ func TestDevice_Forward(t *testing.T) {
 	SetDebug(true)
 
 	localPort := 61000
-	err = devices[0].Forward(localPort, 6790)
+	err = devices[0].Forward(TcpPort(localPort), TcpPort(6790))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = devices[0].ForwardKill(localPort)
+	err = devices[0].ForwardKill(TcpPort(localPort))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestDevice_ForwardKill(t *testing.T) {
 
 	SetDebug(true)
 
-	err = devices[0].ForwardKill(6790)
+	err = devices[0].ForwardKill(TcpPort(6790))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -46,6 +46,8 @@ func deviceStateConv(k string) (deviceState DeviceState) {
 	return
 }
 
+type Port = string
+
 type DeviceForward struct {
 	Serial string
 	Local  string
@@ -53,6 +55,12 @@ type DeviceForward struct {
 	// LocalProtocol string
 	// RemoteProtocol string
 }
+
+// TcpPort builds a tcp:<port> endpoint string for Forward/Reverse.
+func TcpPort(port int) Port { return Port(fmt.Sprintf("tcp:%d", port)) }
+
+// LocalAbstractPort builds a localabstract:<path> endpoint string for Android's abstract UNIX domain socket namespace.
+func LocalAbstractPort(path string) Port { return Port(fmt.Sprintf("localabstract:%s", path)) }
 
 type Device struct {
 	adbClient Client
@@ -121,17 +129,13 @@ func (d Device) DevicePath() (string, error) {
 	return resp, err
 }
 
-func (d Device) Forward(localPort, remotePort int, noRebind ...bool) (err error) {
+func (d Device) Forward(local, remote Port, noRebind ...bool) (err error) {
 	command := ""
-	local := fmt.Sprintf("tcp:%d", localPort)
-	remote := fmt.Sprintf("tcp:%d", remotePort)
-
 	if len(noRebind) != 0 && noRebind[0] {
 		command = fmt.Sprintf("host-serial:%s:forward:norebind:%s;%s", d.serial, local, remote)
 	} else {
 		command = fmt.Sprintf("host-serial:%s:forward:%s;%s", d.serial, local, remote)
 	}
-
 	_, err = d.adbClient.executeCommand(command, true)
 	return
 }
@@ -152,8 +156,7 @@ func (d Device) ForwardList() (deviceForwardList []DeviceForward, err error) {
 	return
 }
 
-func (d Device) ForwardKill(localPort int) (err error) {
-	local := fmt.Sprintf("tcp:%d", localPort)
+func (d Device) ForwardKill(local Port) (err error) {
 	_, err = d.adbClient.executeCommand(fmt.Sprintf("host-serial:%s:killforward:%s", d.serial, local), true)
 	return
 }
@@ -357,4 +360,57 @@ func (d Device) Logcat2File(file string, exitChan chan bool) error {
 func (d Device) LogcatClear() error {
 	_, err := d.executeCommand("shell:logcat -c")
 	return err
+}
+
+// Reverse sets up reverse port forwarding from device to host.
+func (d Device) Reverse(local, remote Port, noRebind ...bool) (err error) {
+	command := ""
+	if len(noRebind) != 0 && noRebind[0] {
+		command = fmt.Sprintf("reverse:forward:norebind:%s;%s", local, remote)
+	} else {
+		command = fmt.Sprintf("reverse:forward:%s;%s", local, remote)
+	}
+	_, err = d.executeCommand(command, true)
+	return
+}
+
+// ReverseList lists reverse forwards on the device. Serial is 'host' per adb spec.
+func (d Device) ReverseList() (deviceForwardList []DeviceForward, err error) {
+	raw, err := d.executeCommand("reverse:list-forward")
+	if err != nil {
+		return nil, err
+	}
+	resp := string(raw)
+	lines := strings.Split(resp, "\n")
+	deviceForwardList = make([]DeviceForward, 0, len(lines))
+	for i := range lines {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			// Should be at least local and remote; adb usually provides 2 fields for reverse (serial is 'host' in docs),
+			// but to keep consistent with ForwardList format, handle both 2 or 3 fields.
+			continue
+		}
+		if len(fields) == 2 {
+			deviceForwardList = append(deviceForwardList, DeviceForward{Serial: "host", Local: fields[0], Remote: fields[1]})
+		} else {
+			deviceForwardList = append(deviceForwardList, DeviceForward{Serial: fields[0], Local: fields[1], Remote: fields[2]})
+		}
+	}
+	return
+}
+
+// ReverseKill removes a specific reverse forward from the device.
+func (d Device) ReverseKill(local Port) (err error) {
+	_, err = d.executeCommand(fmt.Sprintf("reverse:killforward:%s", local), true)
+	return
+}
+
+// ReverseKillAll removes all reverse forwards on the device.
+func (d Device) ReverseKillAll() (err error) {
+	_, err = d.executeCommand("reverse:killforward-all", true)
+	return
 }
