@@ -1,3 +1,3 @@
-module github.com/electricbubble/gadb
+module github.com/Tryanks/gadb
 
-go 1.15
+go 1.25
